@@ -1,54 +1,215 @@
-import { Graphics } from 'pixi.js';
+import { Sprite, Texture, Assets, Graphics, AnimatedSprite, Rectangle } from 'pixi.js';
 import * as Physics from '../game/Physics.js';
 
 export class Player {
-    constructor(x, y) {
+    constructor(x, y, soundManager = null) {
         this.x = x;
         this.y = y;
-        this.width = 32;
-        this.height = 40;
+        this.spriteWidth = 128;   // Full sprite frame dimensions
+        this.spriteHeight = 128;
+
+        // Collision hitbox (actual visible dog area)
+        this.width = 50;   // Approximate width of visible dog
+        this.height = 85;  // Approximate height of visible dog
+        this.hitboxOffsetX = 35;  // Offset from sprite left edge to hitbox
+        this.hitboxOffsetY = 35;  // Offset from sprite top edge to hitbox
 
         this.velocity = { x: 0, y: 0 };
         this.isGrounded = false;
         this.coyoteTimer = 0;
         this.facingRight = true;
+        this.soundManager = soundManager;
 
-        // Create player graphics (simple dog shape)
-        this.sprite = new Graphics();
-        this.createDogShape();
+        // Animation state
+        this.currentAnimation = 'idle'; // 'walking', 'jumping', 'idle'
+        this.idleSprite = null;
+        this.walkingSprite = null;
+        this.jumpingSprite = null;
+        this.sprite = null;
+        this.stageContainer = null;
 
-        this.sprite.x = x;
-        this.sprite.y = y;
+        // Create sprite placeholder (will be loaded asynchronously)
+        // Start with a temporary fallback sprite
+        this.sprite = this.createFallbackSprite(x, y);
+        this.loadSprites(x, y);
     }
 
-    createDogShape() {
-        // Body
-        this.sprite.rect(0, 15, 28, 20);
-        this.sprite.fill({ color: 0xD2691E }); // Brown
+    async loadSprites(x, y) {
+        // Load sprite sheets
+        const idleUrl = '/assets/sprites/dog/Sprite-0002.png';
+        const walkingUrl = '/assets/sprites/dog/Sprite-0001.png';
+        const jumpingUrl = '/assets/sprites/dog/Sprite-0006.png';
 
-        // Head
-        this.sprite.circle(25, 15, 10);
-        this.sprite.fill({ color: 0xD2691E });
+        try {
+            // Load all textures
+            const [idleTexture, walkingTexture, jumpingTexture] = await Promise.all([
+                Assets.load(idleUrl),
+                Assets.load(walkingUrl),
+                Assets.load(jumpingUrl)
+            ]);
 
-        // Ears
-        this.sprite.circle(20, 8, 5);
-        this.sprite.circle(30, 8, 5);
-        this.sprite.fill({ color: 0x8B4513 }); // Darker brown
+            // Extract frames from idle sprite sheet (8 frames)
+            const idleFrames = this.extractFrames(idleTexture, 8);
 
-        // Nose
-        this.sprite.circle(30, 15, 3);
-        this.sprite.fill({ color: 0x000000 }); // Black
+            // Extract frames from walking sprite sheet (8 frames)
+            const walkingFrames = this.extractFrames(walkingTexture, 8);
 
-        // Eye
-        this.sprite.circle(27, 12, 2);
-        this.sprite.fill({ color: 0x000000 });
+            // Extract frames from jumping sprite sheet (11 frames)
+            const jumpingFrames = this.extractFrames(jumpingTexture, 11);
 
-        // Legs (simple rectangles)
-        this.sprite.rect(5, 35, 4, 5);
-        this.sprite.rect(15, 35, 4, 5);
-        this.sprite.fill({ color: 0x8B4513 });
+            // Create animated sprites
+            this.idleSprite = new AnimatedSprite(idleFrames);
+            this.idleSprite.animationSpeed = 0.1; // Slower for idle breathing
+            this.idleSprite.play();
 
-        this.sprite.stroke({ width: 2, color: 0x000000 }); // Black outline
+            this.walkingSprite = new AnimatedSprite(walkingFrames);
+            this.walkingSprite.animationSpeed = 0.2; // Adjust speed as needed
+            this.walkingSprite.play();
+
+            this.jumpingSprite = new AnimatedSprite(jumpingFrames);
+            this.jumpingSprite.animationSpeed = 0.15; // Adjust speed as needed
+            this.jumpingSprite.play();
+
+            // Remove old sprite if it exists
+            if (this.sprite && this.sprite.parent) {
+                this.sprite.parent.removeChild(this.sprite);
+            }
+
+            // Start with idle sprite
+            this.sprite = this.idleSprite;
+
+            // Set position (use natural sprite dimensions, no forced width/height)
+            // Use center anchor for easier flipping
+            this.sprite.anchor.set(0.5, 0.5);
+            // Position sprite center at hitbox center
+            this.sprite.x = x + this.width / 2;
+            this.sprite.y = y + this.height / 2;
+            this.sprite.scale.x = this.facingRight ? 1 : -1;
+
+            // Re-add to stage if it was already added
+            if (this.stageContainer) {
+                this.stageContainer.addChild(this.sprite);
+            }
+
+            this.currentAnimation = 'idle';
+        } catch (error) {
+            console.warn('Failed to load dog sprites, using fallback:', error);
+            // Keep using the fallback sprite
+        }
+    }
+
+    extractFrames(baseTexture, frameCount) {
+        const frames = [];
+        const frameWidth = baseTexture.width / frameCount;
+        const frameHeight = baseTexture.height;
+
+        for (let i = 0; i < frameCount; i++) {
+            const rect = new Rectangle(i * frameWidth, 0, frameWidth, frameHeight);
+            const frame = new Texture({
+                source: baseTexture.source,
+                frame: rect
+            });
+            frames.push(frame);
+        }
+
+        return frames;
+    }
+
+    updateAnimation() {
+        if (!this.idleSprite || !this.walkingSprite || !this.jumpingSprite) {
+            return;
+        }
+
+        // Determine current animation state
+        let targetAnimation = 'idle';
+
+        if (!this.isGrounded) {
+            // In the air (jumping or falling)
+            targetAnimation = 'jumping';
+        } else if (Math.abs(this.velocity.x) > 0.1) {
+            // Moving horizontally on ground
+            targetAnimation = 'walking';
+        } else {
+            // Standing still on ground
+            targetAnimation = 'idle';
+        }
+
+        // Switch sprite if animation changed
+        if (targetAnimation !== this.currentAnimation) {
+            const oldSprite = this.sprite;
+
+            this.currentAnimation = targetAnimation;
+
+            switch (targetAnimation) {
+                case 'walking':
+                    this.sprite = this.walkingSprite;
+                    this.sprite.play();
+                    break;
+                case 'jumping':
+                    this.sprite = this.jumpingSprite;
+                    this.sprite.play();
+                    break;
+                case 'idle':
+                default:
+                    this.sprite = this.idleSprite;
+                    this.sprite.play();
+                    break;
+            }
+
+            // Replace sprite in the scene if needed
+            if (oldSprite && oldSprite !== this.sprite && this.stageContainer) {
+                const index = this.stageContainer.getChildIndex(oldSprite);
+                this.stageContainer.removeChildAt(index);
+                this.stageContainer.addChildAt(this.sprite, index);
+
+                // Copy position and scale
+                this.sprite.x = oldSprite.x;
+                this.sprite.y = oldSprite.y;
+                this.sprite.anchor.set(0.5, 0.5);
+                this.sprite.scale.x = this.facingRight ? 1 : -1;
+            }
+        }
+    }
+
+    createFallbackSprite(x, y) {
+        // Simple dog-like placeholder sprite (matches hitbox size)
+        const graphics = new Graphics();
+
+        // Body (brown) - scaled to hitbox
+        graphics.rect(10, 15, 30, 40);
+        graphics.fill({ color: 0xD2691E });
+
+        // Head (brown)
+        graphics.circle(35, 20, 15);
+        graphics.fill({ color: 0xD2691E });
+
+        // Ears (darker brown)
+        graphics.circle(25, 10, 8);
+        graphics.circle(45, 10, 8);
+        graphics.fill({ color: 0x8B4513 });
+
+        // Nose (black)
+        graphics.circle(42, 22, 3);
+        graphics.fill({ color: 0x000000 });
+
+        // Eye (black)
+        graphics.circle(38, 18, 2.5);
+        graphics.fill({ color: 0x000000 });
+
+        // Legs (darker brown)
+        graphics.rect(15, 55, 8, 15);
+        graphics.rect(30, 55, 8, 15);
+        graphics.fill({ color: 0x8B4513 });
+
+        // Tail
+        graphics.circle(8, 35, 5);
+        graphics.fill({ color: 0xD2691E });
+
+        // Position at hitbox center
+        graphics.x = x + this.width / 2;
+        graphics.y = y + this.height / 2;
+        graphics.pivot.set(this.width / 2, this.height / 2);
+        return graphics;
     }
 
     update(deltaTime, input, platforms) {
@@ -73,6 +234,11 @@ export class Player {
             this.velocity.y = Physics.JUMP_FORCE;
             this.isGrounded = false;
             this.coyoteTimer = 0;
+
+            // Play jump sound
+            if (this.soundManager) {
+                this.soundManager.playSound('jump');
+            }
         }
 
         // Apply gravity
@@ -90,10 +256,16 @@ export class Player {
             this.coyoteTimer -= deltaTime / 60; // Convert to seconds
         }
 
-        // Update sprite
-        this.sprite.x = this.x;
-        this.sprite.y = this.y;
-        this.sprite.scale.x = this.facingRight ? 1 : -1;
+        // Update animation based on state
+        this.updateAnimation();
+
+        // Update sprite (only if it exists)
+        // Position sprite center at hitbox center
+        if (this.sprite) {
+            this.sprite.x = this.x + this.width / 2;
+            this.sprite.y = this.y + this.height / 2;
+            this.sprite.scale.x = this.facingRight ? 1 : -1;
+        }
     }
 
     handlePlatformCollisions(platforms) {
@@ -139,11 +311,17 @@ export class Player {
     }
 
     addToStage(container) {
-        container.addChild(this.sprite);
+        if (this.sprite) {
+            this.stageContainer = container;
+            container.addChild(this.sprite);
+        }
     }
 
     removeFromStage(container) {
-        container.removeChild(this.sprite);
+        if (this.sprite && container) {
+            container.removeChild(this.sprite);
+        }
+        this.stageContainer = null;
     }
 
     reset(x, y) {
@@ -152,7 +330,9 @@ export class Player {
         this.velocity = { x: 0, y: 0 };
         this.isGrounded = false;
         this.coyoteTimer = 0;
-        this.sprite.x = x;
-        this.sprite.y = y;
+        if (this.sprite) {
+            this.sprite.x = x + this.width / 2;
+            this.sprite.y = y + this.height / 2;
+        }
     }
 }

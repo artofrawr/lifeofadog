@@ -1,6 +1,8 @@
 import { Container } from 'pixi.js';
 import { InputManager } from '../systems/InputManager.js';
 import { CollisionManager } from '../systems/CollisionManager.js';
+import { SoundManager } from '../systems/SoundManager.js';
+import { ParallaxBackground } from '../systems/ParallaxBackground.js';
 import { Player } from '../entities/Player.js';
 import { Platform } from '../entities/Platform.js';
 import { Collectible } from '../entities/Collectible.js';
@@ -17,6 +19,8 @@ export class Game {
     constructor(app) {
         this.app = app;
         this.input = new InputManager();
+        this.sound = new SoundManager();
+        this.background = new ParallaxBackground(app);
 
         // Containers for different layers
         this.worldContainer = new Container();
@@ -31,6 +35,12 @@ export class Game {
         this.scoreElement = document.getElementById('score');
         this.messageElement = document.getElementById('message');
         this.instructionsElement = document.getElementById('instructions');
+
+        // Load sounds
+        this.sound.loadMusic('/assets/music/time_for_adventure.mp3');
+        this.sound.loadSound('jump', '/assets/sounds/jump.wav');
+        this.sound.loadSound('coin', '/assets/sounds/coin.wav');
+        this.sound.loadSound('explosion', '/assets/sounds/explosion.wav');
 
         // Initialize level
         this.loadLevel(level1Data);
@@ -79,14 +89,21 @@ export class Game {
         // Create player
         this.player = new Player(
             levelData.playerStart.x,
-            levelData.playerStart.y
+            levelData.playerStart.y,
+            this.sound
         );
         this.player.addToStage(this.worldContainer);
     }
 
-    start() {
+    async start() {
+        // Load parallax background
+        await this.background.load();
+        this.background.addToStage(this.app.stage);
+
         // Start game loop
         this.app.ticker.add((ticker) => this.update(ticker.deltaTime));
+
+        // Note: Music will be started by user click in main.js
     }
 
     update(deltaTime) {
@@ -115,6 +132,7 @@ export class Game {
                     collectible.removeFromStage(this.worldContainer);
                     this.score++;
                     this.updateScore();
+                    this.sound.playSound('coin');
                 }
             }
         }
@@ -125,6 +143,7 @@ export class Game {
                 this.player.getBounds(),
                 obstacle.getBounds()
             )) {
+                this.sound.playSound('explosion');
                 this.lose();
                 return;
             }
@@ -147,7 +166,7 @@ export class Game {
     }
 
     updateCamera() {
-        // Smooth camera follow
+        // Direct camera follow (no lerp smoothing to avoid parallax bounce)
         const targetX = -this.player.x + this.app.screen.width / 3;
 
         // Clamp camera to level bounds
@@ -156,9 +175,12 @@ export class Game {
 
         const clampedX = Math.max(minX, Math.min(maxX, targetX));
 
-        // Smooth lerp
-        this.cameraX += (clampedX - this.cameraX) * 0.1;
+        // Set camera directly without smoothing
+        this.cameraX = clampedX;
         this.worldContainer.x = this.cameraX;
+
+        // Update parallax background
+        this.background.update(this.cameraX);
     }
 
     updateScore() {

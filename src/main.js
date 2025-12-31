@@ -17,9 +17,18 @@ async function init() {
     const gameContainer = document.getElementById('game-container');
     gameContainer.appendChild(app.canvas);
 
-    // Create and start the game
+    // Create the game (but don't start music yet)
     const game = new Game(app);
-    game.start();
+    await game.start();
+
+    // Wait for user click to start music
+    const clickToStart = document.getElementById('click-to-start');
+    clickToStart.addEventListener('click', () => {
+        // Start background music
+        game.sound.playMusic();
+        // Hide overlay
+        clickToStart.style.display = 'none';
+    });
 }
 
 // Start the game

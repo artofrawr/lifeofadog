@@ -1,5 +1,5 @@
 export const level1Data = {
-    playerStart: { x: 50, y: 450 },
+    playerStart: { x: 50, y: 435 },  // Adjusted for 85px tall hitbox (520 - 85 = 435)
 
     platforms: [
         // Main sidewalk - mostly continuous
@@ -22,9 +22,9 @@ export const level1Data = {
     ],
 
     obstacles: [
-        { x: 250, y: 495 },      // First obstacle to jump over
-        { x: 900, y: 495 },      // Second obstacle
-        { x: 1500, y: 495 },     // Third obstacle
+        { x: 250, y: 490 },      // First obstacle to jump over (adjusted to sit on platform)
+        { x: 900, y: 490 },      // Second obstacle
+        { x: 1500, y: 490 },     // Third obstacle
     ],
 
     goalX: 1650, // Goal position (winning area)

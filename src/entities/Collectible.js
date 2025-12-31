@@ -1,33 +1,64 @@
-import { Graphics } from 'pixi.js';
+import { Sprite, Assets } from 'pixi.js';
 
 export class Collectible {
     constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.width = 20;
-        this.height = 20;
+        this.width = 45;  
+        this.height = 38; 
         this.collected = false;
 
-        // Create graphics (bone shape approximation using rectangles)
-        this.sprite = new Graphics();
-
-        // Draw a simple bone shape with two circles and a rectangle
-        this.sprite.circle(-6, 0, 4); // Left end
-        this.sprite.circle(6, 0, 4);  // Right end
-        this.sprite.rect(-6, -2, 12, 4); // Middle part
-        this.sprite.fill({ color: 0xFFEB3B }); // Yellow
-        this.sprite.stroke({ width: 1, color: 0xFFA000 }); // Orange outline
-
-        this.sprite.x = x + this.width / 2;
-        this.sprite.y = y + this.height / 2;
-
         // Animation properties
-        this.bobOffset = 0;
-        this.bobSpeed = 3;
+        this.bobOffset = Math.random() * 2 * Math.PI;
+        this.bobSpeed = 0.1;
+
+        // Only one sprite instance
+        this.sprite = null;
+        this.isLoaded = false;
+        this.container = null;
+
+        // Load sprite
+        this.loadSprite(x, y);
+    }
+
+    async loadSprite(x, y) {
+        try {
+            const texture = await Assets.load('/assets/sprites/bone.png');
+
+            // Only create sprite if it doesn't exist yet
+            if (!this.sprite) {
+                this.sprite = new Sprite(texture);
+
+                // Scale to match collectible size (804px -> ~45px)
+                const scale = this.width / texture.width;
+                this.sprite.scale.set(scale, scale);
+
+                // Center the sprite on the collectible position
+                this.sprite.anchor.set(0.5, 0.5);
+                this.sprite.x = x + this.width / 2;
+                this.sprite.y = y + this.height / 2;
+
+                this.isLoaded = true;
+
+                // If container was set before sprite loaded, add it now
+                if (this.container) {
+                    this.addSpriteToContainer();
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load bone sprite:', error);
+        }
+    }
+
+    addSpriteToContainer() {
+        // ONLY place where sprite is added to container
+        if (this.sprite && this.container && !this.sprite.parent) {
+            this.container.addChild(this.sprite);
+        }
     }
 
     update(deltaTime) {
-        if (this.collected) return;
+        if (this.collected || !this.sprite) return;
 
         // Bob up and down
         this.bobOffset += this.bobSpeed * deltaTime;
@@ -48,10 +79,15 @@ export class Collectible {
     }
 
     addToStage(container) {
-        container.addChild(this.sprite);
+        this.container = container;
+        // Use the single method to add sprite (handles all the checks)
+        this.addSpriteToContainer();
     }
 
     removeFromStage(container) {
-        container.removeChild(this.sprite);
+        if (this.sprite && this.sprite.parent) {
+            this.sprite.parent.removeChild(this.sprite);
+        }
+        this.container = null;
     }
 }

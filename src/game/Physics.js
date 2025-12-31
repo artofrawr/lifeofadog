@@ -1,7 +1,7 @@
 // Physics constants
 export const GRAVITY = 0.6;
 export const MAX_FALL_SPEED = 15;
-export const JUMP_FORCE = -10;  // Reduced from -12 for lower jump
+export const JUMP_FORCE = -15;  // Increased for bigger dog sprite
 export const MOVE_SPEED = 6;    // Increased from 4 for faster horizontal movement
 export const ACCELERATION = 1.0; // Increased from 0.5 for quicker acceleration
 export const FRICTION = 0.8;
